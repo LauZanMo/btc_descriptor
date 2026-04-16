@@ -1,8 +1,8 @@
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <pcl_conversions/pcl_conversions.h>
-#include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <boost/filesystem.hpp>
 
@@ -31,8 +31,9 @@ std::vector<float> read_lidar_data(const std::string lidar_data_path) {
 }
 
 int main(int argc, char **argv) {
-  ros::init(argc, argv, "btc_place_recognition");
-  ros::NodeHandle nh;
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<rclcpp::Node>("btc_place_recognition");
+
   std::string setting_path = "";
   std::string pcds_dir = "";
   std::string pose_file = "";
@@ -40,36 +41,43 @@ int main(int argc, char **argv) {
   double cloud_overlap_thr = 0.5;
   bool calc_gt_enable = false;
   bool read_bin = true;
-  nh.param<double>("cloud_overlap_thr", cloud_overlap_thr, 0.5);
-  nh.param<std::string>("setting_path", setting_path, "");
-  nh.param<std::string>("pcds_dir", pcds_dir, "");
-  nh.param<std::string>("pose_file", pose_file, "");
-  nh.param<bool>("read_bin", read_bin, true);
 
-  ros::Publisher pubOdomAftMapped =
-      nh.advertise<nav_msgs::Odometry>("/aft_mapped_to_init", 10);
-  ros::Publisher pubCureentCloud =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_current", 100);
-  ros::Publisher pubCurrentBinary =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_key_points", 100);
-  ros::Publisher pubPath =
-      nh.advertise<visualization_msgs::MarkerArray>("descriptor_line", 10);
-  ros::Publisher pubCurrentPose =
-      nh.advertise<nav_msgs::Odometry>("/current_pose", 10);
-  ros::Publisher pubMatchedPose =
-      nh.advertise<nav_msgs::Odometry>("/matched_pose", 10);
-  ros::Publisher pubMatchedCloud =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched", 100);
-  ros::Publisher pubMatchedBinary =
-      nh.advertise<sensor_msgs::PointCloud2>("/cloud_matched_key_points", 100);
-  ros::Publisher pubLoopStatus =
-      nh.advertise<visualization_msgs::MarkerArray>("/loop_status", 100);
-  ros::Publisher pubBTC =
-      nh.advertise<visualization_msgs::MarkerArray>("descriptor_line", 10);
+  node->declare_parameter("cloud_overlap_thr", 0.5);
+  node->declare_parameter("setting_path", "");
+  node->declare_parameter("pcds_dir", "");
+  node->declare_parameter("pose_file", "");
+  node->declare_parameter("read_bin", true);
 
-  std_msgs::ColorRGBA color_tp;
-  std_msgs::ColorRGBA color_fp;
-  std_msgs::ColorRGBA color_path;
+  node->get_parameter("cloud_overlap_thr", cloud_overlap_thr);
+  node->get_parameter("setting_path", setting_path);
+  node->get_parameter("pcds_dir", pcds_dir);
+  node->get_parameter("pose_file", pose_file);
+  node->get_parameter("read_bin", read_bin);
+
+  auto pubOdomAftMapped =
+      node->create_publisher<nav_msgs::msg::Odometry>("/aft_mapped_to_init", 10);
+  auto pubCureentCloud =
+      node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_current", 100);
+  auto pubCurrentBinary =
+      node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_key_points", 100);
+  auto pubPath =
+      node->create_publisher<visualization_msgs::msg::MarkerArray>("descriptor_line", 10);
+  auto pubCurrentPose =
+      node->create_publisher<nav_msgs::msg::Odometry>("/current_pose", 10);
+  auto pubMatchedPose =
+      node->create_publisher<nav_msgs::msg::Odometry>("/matched_pose", 10);
+  auto pubMatchedCloud =
+      node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_matched", 100);
+  auto pubMatchedBinary =
+      node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_matched_key_points", 100);
+  auto pubLoopStatus =
+      node->create_publisher<visualization_msgs::msg::MarkerArray>("/loop_status", 100);
+  auto pubBTC =
+      node->create_publisher<visualization_msgs::msg::MarkerArray>("descriptor_line", 10);
+
+  std_msgs::msg::ColorRGBA color_tp;
+  std_msgs::msg::ColorRGBA color_fp;
+  std_msgs::msg::ColorRGBA color_path;
   double scale_tp = 4.0;
   double scale_fp = 5.0;
   double scale_path = 3.0;
@@ -88,8 +96,8 @@ int main(int argc, char **argv) {
   color_path.g = 255.0 / 255.0;
   color_path.b = 255.0 / 255.0;
 
-  ros::Rate loop(50000);
-  ros::Rate slow_loop(1000);
+  rclcpp::Rate loop(50000);
+  rclcpp::Rate slow_loop(1000);
 
   ConfigSetting config_setting;
   load_config_setting(setting_path, config_setting);
@@ -100,7 +108,7 @@ int main(int argc, char **argv) {
   load_evo_pose_with_time(pose_file, pose_list, time_list);
   std::string print_msg = "Successfully load pose file:" + pose_file +
                           ". pose size:" + std::to_string(time_list.size());
-  ROS_INFO_STREAM(print_msg.c_str());
+  RCLCPP_INFO_STREAM(node->get_logger(), print_msg.c_str());
 
   BtcDescManager *btc_manager = new BtcDescManager(config_setting);
   btc_manager->print_debug_info_ = false;
@@ -116,7 +124,7 @@ int main(int argc, char **argv) {
 
   pcl::PCDReader reader;
 
-  while (ros::ok() && !finish) {
+  while (rclcpp::ok() && !finish) {
     for (size_t submap_id = 0; submap_id < pose_list.size(); ++submap_id) {
       pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(
           new pcl::PointCloud<pcl::PointXYZI>());
@@ -162,7 +170,7 @@ int main(int argc, char **argv) {
         auto t_load_start = std::chrono::high_resolution_clock::now();
         // pcl::io::loadPCDFile<pcl::PointXYZI>(pcd_file, *cloud)
         if (reader.read(pcd_file, *cloud) == -1) {
-          ROS_ERROR_STREAM("Couldn't read file " << pcd_file);
+          RCLCPP_ERROR_STREAM(node->get_logger(), "Couldn't read file " << pcd_file);
           continue;
         }
         auto t_load_end = std::chrono::high_resolution_clock::now();
@@ -225,10 +233,10 @@ int main(int argc, char **argv) {
       btc_manager->key_cloud_vec_.push_back(transform_cloud.makeShared());
 
       // visuliazaion
-      sensor_msgs::PointCloud2 pub_cloud;
+      sensor_msgs::msg::PointCloud2 pub_cloud;
       pcl::toROSMsg(transform_cloud, pub_cloud);
       pub_cloud.header.frame_id = "camera_init";
-      pubCureentCloud.publish(pub_cloud);
+      pubCureentCloud->publish(pub_cloud);
 
       pcl::PointCloud<pcl::PointXYZ> key_points_cloud;
       for (auto var : btc_manager->history_binary_list_.back()) {
@@ -240,15 +248,15 @@ int main(int argc, char **argv) {
       }
       pcl::toROSMsg(key_points_cloud, pub_cloud);
       pub_cloud.header.frame_id = "camera_init";
-      pubCurrentBinary.publish(pub_cloud);
+      pubCurrentBinary->publish(pub_cloud);
 
-      visualization_msgs::MarkerArray marker_array;
-      visualization_msgs::Marker marker;
+      visualization_msgs::msg::MarkerArray marker_array;
+      visualization_msgs::msg::Marker marker;
       marker.header.frame_id = "camera_init";
       marker.ns = "colored_path";
       marker.id = submap_id;
-      marker.type = visualization_msgs::Marker::LINE_LIST;
-      marker.action = visualization_msgs::Marker::ADD;
+      marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+      marker.action = visualization_msgs::msg::Marker::ADD;
       marker.pose.orientation.w = 1.0;
       if (search_result.first >= 0) {
         triggle_loop_num++;
@@ -270,7 +278,7 @@ int main(int argc, char **argv) {
         }
         pcl::toROSMsg(match_key_points_cloud, pub_cloud);
         pub_cloud.header.frame_id = "camera_init";
-        pubMatchedBinary.publish(pub_cloud);
+        pubMatchedBinary->publish(pub_cloud);
         // true positive
         if (cloud_overlap >= cloud_overlap_thr) {
           true_loop_num++;
@@ -294,16 +302,16 @@ int main(int argc, char **argv) {
           }
           pcl::toROSMsg(matched_cloud, pub_cloud);
           pub_cloud.header.frame_id = "camera_init";
-          pubMatchedCloud.publish(pub_cloud);
+          pubMatchedCloud->publish(pub_cloud);
           slow_loop.sleep();
 
           marker.scale.x = scale_tp;
           marker.color = color_tp;
-          geometry_msgs::Point point1;
+          geometry_msgs::msg::Point point1;
           point1.x = pose_list[submap_id - 1].first[0];
           point1.y = pose_list[submap_id - 1].first[1];
           point1.z = pose_list[submap_id - 1].first[2];
-          geometry_msgs::Point point2;
+          geometry_msgs::msg::Point point2;
           point2.x = pose_list[submap_id].first[0];
           point2.y = pose_list[submap_id].first[1];
           point2.z = pose_list[submap_id].first[2];
@@ -331,15 +339,15 @@ int main(int argc, char **argv) {
           }
           pcl::toROSMsg(matched_cloud, pub_cloud);
           pub_cloud.header.frame_id = "camera_init";
-          pubMatchedCloud.publish(pub_cloud);
+          pubMatchedCloud->publish(pub_cloud);
           slow_loop.sleep();
           marker.scale.x = scale_fp;
           marker.color = color_fp;
-          geometry_msgs::Point point1;
+          geometry_msgs::msg::Point point1;
           point1.x = pose_list[submap_id - 1].first[0];
           point1.y = pose_list[submap_id - 1].first[1];
           point1.z = pose_list[submap_id - 1].first[2];
-          geometry_msgs::Point point2;
+          geometry_msgs::msg::Point point2;
           point2.x = pose_list[submap_id].first[0];
           point2.y = pose_list[submap_id].first[1];
           point2.z = pose_list[submap_id].first[2];
@@ -351,11 +359,11 @@ int main(int argc, char **argv) {
         if (submap_id > 0) {
           marker.scale.x = scale_path;
           marker.color = color_path;
-          geometry_msgs::Point point1;
+          geometry_msgs::msg::Point point1;
           point1.x = pose_list[submap_id - 1].first[0];
           point1.y = pose_list[submap_id - 1].first[1];
           point1.z = pose_list[submap_id - 1].first[2];
-          geometry_msgs::Point point2;
+          geometry_msgs::msg::Point point2;
           point2.x = pose_list[submap_id].first[0];
           point2.y = pose_list[submap_id].first[1];
           point2.z = pose_list[submap_id].first[2];
@@ -364,11 +372,13 @@ int main(int argc, char **argv) {
         }
       }
       marker_array.markers.push_back(marker);
-      pubLoopStatus.publish(marker_array);
+      pubLoopStatus->publish(marker_array);
       loop.sleep();
     }
     finish = true;
   }
+
+  rclcpp::shutdown();
 
   double mean_descriptor_time =
       std::accumulate(descriptor_time.begin(), descriptor_time.end(), 0) * 1.0 /
